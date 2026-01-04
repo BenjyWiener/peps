@@ -1,0 +1,656 @@
+PEP: 9999
+Title: Generalized overload types
+Author: Benjy Wiener <benjywiener@gmail.com>
+Discussions-To: https://discuss.python.org/t/typemap-generalizing-overload-semantics/105440
+Status: Draft
+Type: Standards Track
+Topic: Typing
+Created: 04-Jan-2026
+Python-Version: 3.15
+Post-History: `28-Dec-2025 <https://discuss.python.org/t/typemap-generalizing-overload-semantics/105440>`__
+
+
+Abstract
+========
+
+This PEP proposes a generalized overloading mechanism, expanding on the existing ``@typing.overload`` decorator
+semantics, via a new ``OverloadedType`` special form. The goal is to enable developers to describe arbitray type
+transformations in a concise, flexible, and resuable manner, allowing more complex and dynamic code to be accurately
+typed.
+
+
+Motivation
+==========
+
+Currently, ``typing.overload`` allows developers to define arbitrary relationships between function input types
+and return types. However, this functionality is limited to functions, and does not scale well.
+
+
+Class-level Overloading
+-----------------------
+
+As an example of code that would benefit from overloading at the class level, consider this pattern, common
+to data encoding/decoding implementations:
+
+::
+
+    from enum import IntEnum
+
+    class DataType(IntEnum):
+        UINT8 = 0
+        UINT64 = 1
+        STRING = 2
+
+    class Message:
+        data_type: DataType
+        value: int | str
+
+        def encode(self) -> bytes:
+            if self.data_type is DataType.UINT8:
+                # Type checker error: Cannot access attribute "to_bytes" for class "str"
+                encoded_value = self.value.to_bytes(1, 'little')
+            elif self.data_type is DataType.UINT64:
+                # Type checker error: Cannot access attribute "to_bytes" for class "str"
+                encoded_value = self.value.to_bytes(8, 'little')
+            elif self.data_type is DataType.STRING:
+                # Type checker error: Cannot access attribute "encode" for class "int"
+                encoded_value = self.value.encode('utf-8')
+            else:
+                assert_never(self.data_type)
+            return self.data_type.to_bytes(1) + encoded_value
+
+There is currently no way to express to type checkers the relationship between ``data_type`` and ``value``,
+requiring such code to resort to ``cast`` or ``assert`` to satisfy the type checker.
+
+
+Overload explosion
+------------------
+
+Another motivation for this PEP is to avoid the combinatorial explosion of overloads required to type certain
+constructs. As a real-world example, take ``subprocess.Popen``'s ``__init__`` method from the official ``_typeshed``
+repository (`source <https://github.com/python/typeshed/blob/eb347f3a1c13dc00449bf178a53c24f2ae838450/stdlib/subprocess.pyi#L1472>`__):
+
+::
+
+    if sys.version_info >= (3, 11):
+        # process_group is added in 3.11
+        @overload
+        def __init__(
+            self: Popen[str],
+            args: _CMD,
+            bufsize: int = -1,
+            executable: StrOrBytesPath | None = None,
+            stdin: _FILE | None = None,
+            stdout: _FILE | None = None,
+            stderr: _FILE | None = None,
+            preexec_fn: Callable[[], object] | None = None,
+            close_fds: bool = True,
+            shell: bool = False,
+            cwd: StrOrBytesPath | None = None,
+            env: _ENV | None = None,
+            universal_newlines: bool | None = None,
+            startupinfo: Any | None = None,
+            creationflags: int = 0,
+            restore_signals: bool = True,
+            start_new_session: bool = False,
+            pass_fds: Collection[int] = (),
+            *,
+            text: bool | None = None,
+            encoding: str,
+            errors: str | None = None,
+            user: str | int | None = None,
+            group: str | int | None = None,
+            extra_groups: Iterable[str | int] | None = None,
+            umask: int = -1,
+            pipesize: int = -1,
+            process_group: int | None = None,
+        ) -> None: ...
+        @overload
+        def __init__(
+            self: Popen[str],
+            args: _CMD,
+            bufsize: int = -1,
+            executable: StrOrBytesPath | None = None,
+            stdin: _FILE | None = None,
+            stdout: _FILE | None = None,
+            stderr: _FILE | None = None,
+            preexec_fn: Callable[[], object] | None = None,
+            close_fds: bool = True,
+            shell: bool = False,
+            cwd: StrOrBytesPath | None = None,
+            env: _ENV | None = None,
+            universal_newlines: bool | None = None,
+            startupinfo: Any | None = None,
+            creationflags: int = 0,
+            restore_signals: bool = True,
+            start_new_session: bool = False,
+            pass_fds: Collection[int] = (),
+            *,
+            text: bool | None = None,
+            encoding: str | None = None,
+            errors: str,
+            user: str | int | None = None,
+            group: str | int | None = None,
+            extra_groups: Iterable[str | int] | None = None,
+            umask: int = -1,
+            pipesize: int = -1,
+            process_group: int | None = None,
+        ) -> None: ...
+        @overload
+        def __init__(
+            self: Popen[str],
+            args: _CMD,
+            bufsize: int = -1,
+            executable: StrOrBytesPath | None = None,
+            stdin: _FILE | None = None,
+            stdout: _FILE | None = None,
+            stderr: _FILE | None = None,
+            preexec_fn: Callable[[], object] | None = None,
+            close_fds: bool = True,
+            shell: bool = False,
+            cwd: StrOrBytesPath | None = None,
+            env: _ENV | None = None,
+            *,
+            universal_newlines: Literal[True],
+            startupinfo: Any | None = None,
+            creationflags: int = 0,
+            restore_signals: bool = True,
+            start_new_session: bool = False,
+            pass_fds: Collection[int] = (),
+            # where the *real* keyword only args start
+            text: bool | None = None,
+            encoding: str | None = None,
+            errors: str | None = None,
+            user: str | int | None = None,
+            group: str | int | None = None,
+            extra_groups: Iterable[str | int] | None = None,
+            umask: int = -1,
+            pipesize: int = -1,
+            process_group: int | None = None,
+        ) -> None: ...
+        @overload
+        def __init__(
+            self: Popen[str],
+            args: _CMD,
+            bufsize: int = -1,
+            executable: StrOrBytesPath | None = None,
+            stdin: _FILE | None = None,
+            stdout: _FILE | None = None,
+            stderr: _FILE | None = None,
+            preexec_fn: Callable[[], object] | None = None,
+            close_fds: bool = True,
+            shell: bool = False,
+            cwd: StrOrBytesPath | None = None,
+            env: _ENV | None = None,
+            universal_newlines: bool | None = None,
+            startupinfo: Any | None = None,
+            creationflags: int = 0,
+            restore_signals: bool = True,
+            start_new_session: bool = False,
+            pass_fds: Collection[int] = (),
+            *,
+            text: Literal[True],
+            encoding: str | None = None,
+            errors: str | None = None,
+            user: str | int | None = None,
+            group: str | int | None = None,
+            extra_groups: Iterable[str | int] | None = None,
+            umask: int = -1,
+            pipesize: int = -1,
+            process_group: int | None = None,
+        ) -> None: ...
+        @overload
+        def __init__(
+            self: Popen[bytes],
+            args: _CMD,
+            bufsize: int = -1,
+            executable: StrOrBytesPath | None = None,
+            stdin: _FILE | None = None,
+            stdout: _FILE | None = None,
+            stderr: _FILE | None = None,
+            preexec_fn: Callable[[], object] | None = None,
+            close_fds: bool = True,
+            shell: bool = False,
+            cwd: StrOrBytesPath | None = None,
+            env: _ENV | None = None,
+            universal_newlines: Literal[False] | None = None,
+            startupinfo: Any | None = None,
+            creationflags: int = 0,
+            restore_signals: bool = True,
+            start_new_session: bool = False,
+            pass_fds: Collection[int] = (),
+            *,
+            text: Literal[False] | None = None,
+            encoding: None = None,
+            errors: None = None,
+            user: str | int | None = None,
+            group: str | int | None = None,
+            extra_groups: Iterable[str | int] | None = None,
+            umask: int = -1,
+            pipesize: int = -1,
+            process_group: int | None = None,
+        ) -> None: ...
+        @overload
+        def __init__(
+            self: Popen[Any],
+            args: _CMD,
+            bufsize: int = -1,
+            executable: StrOrBytesPath | None = None,
+            stdin: _FILE | None = None,
+            stdout: _FILE | None = None,
+            stderr: _FILE | None = None,
+            preexec_fn: Callable[[], object] | None = None,
+            close_fds: bool = True,
+            shell: bool = False,
+            cwd: StrOrBytesPath | None = None,
+            env: _ENV | None = None,
+            universal_newlines: bool | None = None,
+            startupinfo: Any | None = None,
+            creationflags: int = 0,
+            restore_signals: bool = True,
+            start_new_session: bool = False,
+            pass_fds: Collection[int] = (),
+            *,
+            text: bool | None = None,
+            encoding: str | None = None,
+            errors: str | None = None,
+            user: str | int | None = None,
+            group: str | int | None = None,
+            extra_groups: Iterable[str | int] | None = None,
+            umask: int = -1,
+            pipesize: int = -1,
+            process_group: int | None = None,
+        ) -> None: ...
+    # (more overloads for previous Python versions omitted)
+
+As you can see, to properly type the various combinations of ``universal_newlines``, ``text``, ``encoding``,
+and ``errors``, the entire method signature must be duplicated *six* times. In order to accurately type the
+``stdin``, ``stdout``, and ``stderr`` attributes on the resulting ``Popen`` instance (see `this issue <https://github.com/python/typeshed/issues/3831>`__),
+we would need a total of 36 overloads [#popen-overloads]_!
+
+With the proposed mechanism, this could be expressed with two ``OverloadedType``'s and a single declaration for ``__init__``.
+
+
+Specification
+=============
+
+This PEP introduces a new class, ``typing.OverloadedType``, which can be used to define arbitrary type transformations,
+using syntax similar to ``typing.overload``.
+
+An ``OverloadedType`` definition consists of a subclass of ``OverloadedType`` with one or more annotated methods named ``_`` defined
+in its body. Each method, or 'overload', specifies a single overload case, where the parameter annotations are taken as the input types,
+and the return annotation as the output type.
+
+.. note::
+    All overloads are implicitly ``@staticmethod``\ s. Additionally, keyword-only parameters are not allowed.
+
+Once defined, an ``OverloadedType`` is used as a special generic typing form, where the type arguments correspond to the input types
+of the overloads, and the resulting type is determined by matching the provided type arguments against the overloads, using the
+semantics defined in :ref:`typing: Overload <typing:overload>`.
+
+More precisely, given an ``OverloadedType``, ``SomeOverloadedType``, when a type checker encounters an expression of the form
+``SomeOverloadedType[T1, T2, ..., Tn]``, it should perform the following steps:
+
+1. Generate an overloaded function definition from the overloads defined in ``SomeOverloadedType``.
+
+2. Perform overload resolution on the generated function, using ``T1, T2, ..., Tn`` as the argument types.
+
+3. If a matching overload is found, the resulting type is the return type of the matched overload, with type variables substituted as necessary.
+
+4. If no matching overload is found, a type error is raised.
+
+
+Examples
+--------
+
+Class-level overloading, single type parameter:
+'''''''''''''''''''''''''''''''''''''''''''''''
+
+::
+
+    from enum import IntEnum
+    from typing import OverloadedType
+
+    class DataType(IntEnum):
+        UINT8 = 0
+        UINT64 = 1
+        STRING = 2
+
+    class DataTypeToValueType(OverloadedType):
+        def _(_: Literal[DataType.UINT8]) -> int: ...
+        def _(_: Literal[DataType.UINT64]) -> int: ...
+        def _(_: Literal[DataType.STRING]) -> str: ...
+
+    class Message[DataTypeT: (
+        Literal[DataType.UINT8],
+        Literal[DataType.UINT64],
+        Literal[DataType.STRING],
+    )]:
+        data_type: DataTypeT
+        value: DataTypeToValueType[DataTypeT]
+
+    def encode(self) -> bytes:
+        if self.data_type is DataType.UINT8:
+            # Type of self.value is inferred to be int
+            encoded_value = self.value.to_bytes(1)
+        elif self.data_type is DataType.UINT64:
+            # Type of self.value is inferred to be int
+            encoded_value = self.value.to_bytes(8, 'little')
+        elif self.data_type is DataType.STRING:
+            # Type of self.value is inferred to be str
+            encoded_value = self.value.encode('utf-8')
+        else:
+            assert_never(self.data_type)
+        return self.data_type.to_bytes(1) + encoded_value
+
+
+Factored-out function overloads, multiple type parameters:
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+::
+
+    from enum import Enum, global_enum
+    from typing import IO, Literal, OverloadedType
+
+    # Make PIPE a distinct type
+    @global_enum
+    class _PopenFileSpecial(Enum):
+        PIPE = -1
+
+    PIPE: Final = _PopenFileSpecial.PIPE
+
+    class TextOptionsToStringType(OverloadedType):
+        def _(
+            univeral_newlines: Literal[False] | None,
+            text: Literal[False] | None,
+            encoding: None,
+            errors: None,
+        ) -> bytes: ...
+        def _(
+            univeral_newlines: Literal[True],
+            text: Literal[True] | None,
+            encoding: str | None,
+            errors: str | None,
+        ) -> str: ...
+        def _(
+            univeral_newlines: Literal[True] | None,
+            text: Literal[True],
+            encoding: str | None,
+            errors: str | None,
+        ) -> str: ...
+        def _(
+            univeral_newlines: Literal[True] | None,
+            text: Literal[True] | None,
+            encoding: str,
+            errors: str | None,
+        ) -> str: ...
+        def _(
+            univeral_newlines: Literal[True] | None,
+            text: Literal[True] | None,
+            encoding: str | None,
+            errors: str,
+        ) -> str: ...
+        def _(
+            univeral_newlines: bool | None,
+            text: bool | None,
+            encoding: str | None,
+            errors: str | None,
+        ) -> str | bytes: ...
+
+    class FileAndStringTypeToPipe(OverloadedType):
+        def _(
+            file: Literal[_PopenFileSpecial.PIPE],
+            string: str,
+        ) -> IO[str]: ...
+        def _(
+            file: Literal[_PopenFileSpecial.PIPE],
+            string: bytes,
+        ) -> IO[bytes]: ...
+        def _(
+            file: int | IO[Any] | None,
+            string: str | bytes,
+        ) -> None: ...
+
+    class Popen[
+        AnyStr: (str, bytes),
+        StdinT: (IO[bytes], IO[str], None),
+        StdoutT: (IO[bytes], IO[str], None),
+        StderrT: (IO[bytes], IO[str], None),
+    ]:
+        stdin: StdinT
+        stdout: StdoutT
+        stderr: StderrT
+
+    def __init__[
+        UniveralNewlinesT: (Literal[True], Literal[False], None),
+        TextT: (Literal[True], Literal[False], None),
+        EncodingT: (str, None),
+        ErrorsT: (str, None),
+        StdinArgT: (int | IO[Any] | None, Literal[PIPE]),
+        StdoutArgT: (int | IO[Any] | None, Literal[PIPE]),
+        StderrArgT: (int | IO[Any] | None, Literal[PIPE]),
+    ](
+        self: Popen[
+            TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+            FileAndStringTypeToPipe[
+                StdinArgT,
+                TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+            ],
+            FileAndStringTypeToPipe[
+                StdoutArgT,
+                TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+            ],
+            FileAndStringTypeToPipe[
+                StderrArgT,
+                TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+            ],
+        ],
+        args: _CMD,
+        bufsize: int = -1,
+        executable: StrOrBytesPath | None = None,
+        stdin: StdinArgT = None,
+        stdout: StdoutArgT = None,
+        stderr: StderrArgT = None,
+        preexec_fn: Callable[[], Any] | None = None,
+        close_fds: bool = True,
+        shell: bool = False,
+        cwd: StrOrBytesPath | None = None,
+        env: _ENV | None = None,
+        universal_newlines: UniveralNewlinesT = None,
+        startupinfo: Any | None = None,
+        creationflags: int = 0,
+        restore_signals: bool = True,
+        start_new_session: bool = False,
+        pass_fds: Collection[int] = (),
+        *,
+        text: TextT = None,
+        encoding: EncodingT = None,
+        errors: ErrorsT = None,
+        user: str | int | None = None,
+        group: str | int | None = None,
+        extra_groups: Iterable[str | int] | None = None,
+        umask: int = -1,
+        pipesize: int = -1,
+        process_group: int | None = None,
+    ) -> None: ...
+
+
+Recursive Overloads
+-------------------
+
+``OverloadedType``\ s **may** be recursive (reference themselves in return-type position). Type checkers should implement reasonable recursion limits.
+
+Recursive overloads are considered a very advanced feature, but can be used to express complex type transformations, such as on variadic or recursive types.
+
+For example, this code defines an ``OverloadedType`` that maps a tuple of types to a tuple of ``Callable``\ s returning those types,
+something not currently expressible (see `this issue <https://github.com/python/typing/issues/1216>`__ for more context):
+
+::
+
+    from collections.abc import Callable
+    from typing import OverloadedType
+
+    # Cons-list (https://en.wikipedia.org/wiki/Cons#Lists),
+    # to work around the one-TypeVarTuple rule
+    type TypeList[H, T: TypeList] = tuple[H, T] | tuple[()]
+
+    class FlattenTypeList(OverloadedType):
+        """Transforms a `TypeList` into a flat tuple of its elements (innermost first).
+
+        Ex:
+            FlattenTypeList[tuple[int, tuple[str, tuple[bool, ()]]]] == tuple[bool, str, int]
+        """
+
+        # Initial
+        def _[
+            TListT: TypeList,
+        ](
+            tlist: TListT,
+        ) -> FlattenTypeList[
+            TListT,
+            tuple[()],
+        ]: ...
+
+        # Intermediate
+        def _[
+            HeadT,
+            TailT: TypeList,
+            *ProcessedT,
+        ](
+            tlist: tuple[HeadT, TailT],
+            processed: tuple[*ProcessedT],
+        ) -> FlattenTypeList[
+            TailT,
+            tuple[HeadT, *ProcessedT],
+        ]: ...
+
+        # Terminal
+        def _[
+            *ProcessedT,
+        ](
+            tlist: tuple[()],
+            processed: tuple[*ProcessedT],
+        ) -> tuple[*ProcessedT]: ...
+
+
+    class MapCallable(OverloadedType):
+        """Transforms `tuple[T0, T1, ..., Tn]` into `tuple[Callable[[], T0], Callable[[], T1], ..., Callable[[], Tn]]`."""
+
+        # Initial
+        def _[
+            *Ts,
+        ](
+            ts: tuple[*Ts],
+        ) -> MapCallable[
+            tuple[*Ts],
+            tuple[()],
+        ]: ...
+
+        # Intermediate
+        def _[
+            HeadT,
+            *TailTs,
+            *ProcessedT,
+        ](
+            ts: tuple[HeadT, *Ts],
+            processed: tuple[*ProcessedT],
+        ) -> MapCallable[
+            tuple[*TailTs],
+            tuple[Callable[[], HeadT], *ProcessedT],
+        ]: ...
+
+        # Terminal
+        def _[
+            *ProcessedT,
+        ](
+            ts: tuple[()],
+            processed: tuple[*ProcessedT],
+        ) -> tuple[*ProcessedT]: ...
+
+
+    def make_callables[*Ts](*args: *Ts) -> MapCallable[tuple[*Ts]]:
+        return tuple((lambda: arg) for arg in args)
+
+
+Runtime Behavior
+----------------
+
+At runtime, ``OverloadedType``\ s have a special ``__overloads__`` attribute, whose value is a tuple containing the overload
+methods defined in the class body, in the order they were defined.
+
+In order to support this without requiring use of a redundant decorator, ``OverloadedType`` uses a custom metaclass, whose ``__prepare__``
+method returns a custom mapping that tracks assignments to ``_`` and collects them under the ``__overloads__`` key.
+
+
+Backwards Compatibility
+=======================
+
+No breaking changes are introduced by this PEP. Existing code using ``typing.overload`` continues to function as before.
+
+
+How to Teach This
+=================
+
+Users should first be directed to familiarize themselves with ``typing.overload``. Only then, ``OverloadedType`` should be taught as a sort
+of advanced "typing-function", matching and mapping input types to output types much in the same way as ``typing.overload``.
+
+
+Reference Implementation
+========================
+
+[Link to any existing implementation and details about its state, e.g. proof-of-concept.]
+
+
+Rejected Ideas
+==============
+
+``dict``-based syntax
+---------------------
+
+Earlier ideas revolved around a ``dict``-based ``TypingMap`` or ``TypeMap`` special form. This was ultimately rejected for a few reasons:
+
+- Using ``TypeVar``\ s would require using pre-:pep:`695` syntax, which was seen as a regression.
+
+- While no examples are currently known, a theoretical non-hashable type expression would not be usable as a key.
+
+- Both the ``*Map`` term and the ``dict``-based syntax were seen as potentially confusing, as they may:
+
+  * Imply some sort of runtime-lookup behavior, which is not the case.
+
+  * Imply some kind of ``dict``-like resolution semantics.
+
+
+Open Issues
+===========
+
+Output-to-input type inference
+------------------------------
+
+In some cases, it may be desirable to use ``OverloadedType``\ s in input positions, and have the type checker infer the input type(s):
+
+::
+
+    def some_func[T](x: SomeOverloadedType[T]) -> T:
+        ...
+
+However, there are many cases where this is not practical or even possible. At this time, this PEP *allows* type checkers to support such inference when
+deemed feasible, but they may also choose to treat such cases as type errors. Future PEPs may explore this topic further.
+
+
+Acknowledgements
+================
+
+[Thank anyone who has helped with the PEP.]
+
+
+Footnotes
+=========
+
+.. [#popen-overloads] (7 combinations of at least one pipe) * (4 text mode overloads + 1 binary mode) + (1 overload for no pipes, text/binary mode irrelevant).
+
+
+Copyright
+=========
+
+This document is placed in the public domain or under the
+CC0-1.0-Universal license, whichever is more permissive.
