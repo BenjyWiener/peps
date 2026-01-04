@@ -67,8 +67,8 @@ Overload explosion
 ------------------
 
 Another motivation for this PEP is to avoid the combinatorial explosion of overloads required to type certain
-constructs. As a real-world example, take ``subprocess.Popen``'s ``__init__`` method from the official ``_typeshed``
-repository (`source <https://github.com/python/typeshed/blob/eb347f3a1c13dc00449bf178a53c24f2ae838450/stdlib/subprocess.pyi#L1472>`__):
+constructs. As a real-world example, take ``subprocess.Popen.__init__`` method from the official ``typeshed``
+stubs (`source <https://github.com/python/typeshed/blob/eb347f3a1c13dc00449bf178a53c24f2ae838450/stdlib/subprocess.pyi#L1472>`__):
 
 ::
 
@@ -263,12 +263,12 @@ repository (`source <https://github.com/python/typeshed/blob/eb347f3a1c13dc00449
         ) -> None: ...
     # (more overloads for previous Python versions omitted)
 
-As you can see, to properly type the various combinations of ``universal_newlines``, ``text``, ``encoding``,
+To properly type the various combinations of ``universal_newlines``, ``text``, ``encoding``,
 and ``errors``, the entire method signature must be duplicated *six* times. In order to accurately type the
 ``stdin``, ``stdout``, and ``stderr`` attributes on the resulting ``Popen`` instance (see `this issue <https://github.com/python/typeshed/issues/3831>`__),
-we would need a total of 36 overloads [#popen-overloads]_!
+that number goes up to 36 [#popen-overloads]_!
 
-With the proposed mechanism, this could be expressed with two ``OverloadedType``'s and a single declaration for ``__init__``.
+With this proposal, all of those overloads can be expressed with two ``OverloadedType``\ s and a single ``__init__`` declaration.
 
 
 Specification
@@ -286,7 +286,7 @@ and the return annotation as the output type.
 
 Once defined, an ``OverloadedType`` is used as a special generic typing form, where the type arguments correspond to the input types
 of the overloads, and the resulting type is determined by matching the provided type arguments against the overloads, using the
-semantics defined in :ref:`typing: Overload <typing:overload>`.
+semantics defined in :ref:`the overload spec <typing:overload>`.
 
 More precisely, given an ``OverloadedType``, ``SomeOverloadedType``, when a type checker encounters an expression of the form
 ``SomeOverloadedType[T1, T2, ..., Tn]``, it should perform the following steps:
