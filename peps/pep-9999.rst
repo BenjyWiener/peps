@@ -490,82 +490,25 @@ something not currently expressible (see `this issue <https://github.com/python/
     from collections.abc import Callable
     from typing import OverloadedType
 
-    # Cons-list (https://en.wikipedia.org/wiki/Cons#Lists),
-    # to work around the one-TypeVarTuple rule
-    type TypeList[H, T: TypeList] = tuple[H, T] | tuple[()]
 
-    class FlattenTypeList(OverloadedType):
-        """Transforms a `TypeList` into a flat tuple of its elements (innermost first).
-
-        Ex:
-            FlattenTypeList[tuple[int, tuple[str, tuple[bool, ()]]]] == tuple[bool, str, int]
-        """
-
-        # Initial
-        def _[
-            TListT: TypeList,
-        ](
-            tlist: TListT,
-        ) -> FlattenTypeList[
-            TListT,
-            tuple[()],
-        ]: ...
-
-        # Intermediate
-        def _[
-            HeadT,
-            TailT: TypeList,
-            *ProcessedT,
-        ](
-            tlist: tuple[HeadT, TailT],
-            processed: tuple[*ProcessedT],
-        ) -> FlattenTypeList[
-            TailT,
-            tuple[HeadT, *ProcessedT],
-        ]: ...
-
-        # Terminal
-        def _[
-            *ProcessedT,
-        ](
-            tlist: tuple[()],
-            processed: tuple[*ProcessedT],
-        ) -> tuple[*ProcessedT]: ...
+    class AppendToTuple(OverloadedType):
+        def _[*Ts, U](tup: tuple[*Ts], new: U) -> tuple[*Ts, U]: ...
 
 
     class MapCallable(OverloadedType):
         """Transforms `tuple[T0, T1, ..., Tn]` into `tuple[Callable[[], T0], Callable[[], T1], ..., Callable[[], Tn]]`."""
 
         # Initial
-        def _[
-            *Ts,
-        ](
-            ts: tuple[*Ts],
-        ) -> MapCallable[
-            tuple[*Ts],
-            tuple[()],
-        ]: ...
-
-        # Intermediate
-        def _[
-            HeadT,
-            *TailTs,
-            *ProcessedT,
-        ](
-            ts: tuple[HeadT, *Ts],
-            processed: tuple[*ProcessedT],
-        ) -> MapCallable[
-            tuple[*TailTs],
-            tuple[Callable[[], HeadT], *ProcessedT],
-        ]: ...
+        def _[*Ts](ts: tuple[*Ts]) -> MapCallable[tuple[*Ts], tuple[()]]: ...
 
         # Terminal
-        def _[
-            *ProcessedT,
-        ](
-            ts: tuple[()],
-            processed: tuple[*ProcessedT],
-        ) -> tuple[*ProcessedT]: ...
+        def _[OutT](ts: tuple[()], out: OutT) -> OutT: ...
+
+        # Intermediate
+        def _[HeadT, *Ts, OutT: tuple](ts: tuple[HeadT, *Ts], out: OutT) -> MapCallable[
+            tuple[*Ts],
+            AppendToTuple[OutT, Callable[[], HeadT]],
+        ]: ...
 
 
     def make_callables[*Ts](*args: *Ts) -> MapCallable[tuple[*Ts]]:
