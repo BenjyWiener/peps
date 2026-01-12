@@ -309,7 +309,7 @@ Class-level overloading, single type parameter:
 ::
 
     from enum import IntEnum
-    from typing import OverloadedType
+    from typing import Literal, OverloadedType
 
     class DataType(IntEnum):
         UINT8 = 0
@@ -329,19 +329,19 @@ Class-level overloading, single type parameter:
         data_type: DataTypeT
         value: DataTypeToValueType[DataTypeT]
 
-    def encode(self) -> bytes:
-        if self.data_type is DataType.UINT8:
-            # Type of self.value is inferred to be int
-            encoded_value = self.value.to_bytes(1)
-        elif self.data_type is DataType.UINT64:
-            # Type of self.value is inferred to be int
-            encoded_value = self.value.to_bytes(8, 'little')
-        elif self.data_type is DataType.STRING:
-            # Type of self.value is inferred to be str
-            encoded_value = self.value.encode('utf-8')
-        else:
-            assert_never(self.data_type)
-        return self.data_type.to_bytes(1) + encoded_value
+        def encode(self) -> bytes:
+            if self.data_type is DataType.UINT8:
+                # Type of self.value is inferred to be int
+                encoded_value = self.value.to_bytes(1, 'little')
+            elif self.data_type is DataType.UINT64:
+                # Type of self.value is inferred to be int
+                encoded_value = self.value.to_bytes(8, 'little')
+            elif self.data_type is DataType.STRING:
+                # Type of self.value is inferred to be str
+                encoded_value = self.value.encode('utf-8')
+            else:
+                assert_never(self.data_type)
+            return self.data_type.to_bytes(1, 'little') + encoded_value
 
 
 Factored-out function overloads, multiple type parameters:
@@ -421,58 +421,58 @@ Factored-out function overloads, multiple type parameters:
         stdout: StdoutT
         stderr: StderrT
 
-    def __init__[
-        UniveralNewlinesT: (Literal[True], Literal[False], None),
-        TextT: (Literal[True], Literal[False], None),
-        EncodingT: (str, None),
-        ErrorsT: (str, None),
-        StdinArgT: (int | IO[Any] | None, Literal[PIPE]),
-        StdoutArgT: (int | IO[Any] | None, Literal[PIPE]),
-        StderrArgT: (int | IO[Any] | None, Literal[PIPE]),
-    ](
-        self: Popen[
-            TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
-            FileAndStringTypeToPipe[
-                StdinArgT,
+        def __init__[
+            UniveralNewlinesT: (Literal[True], Literal[False], None),
+            TextT: (Literal[True], Literal[False], None),
+            EncodingT: (str, None),
+            ErrorsT: (str, None),
+            StdinArgT: (int | IO[Any] | None, Literal[PIPE]),
+            StdoutArgT: (int | IO[Any] | None, Literal[PIPE]),
+            StderrArgT: (int | IO[Any] | None, Literal[PIPE]),
+        ](
+            self: Popen[
                 TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+                FileAndStringTypeToPipe[
+                    StdinArgT,
+                    TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+                ],
+                FileAndStringTypeToPipe[
+                    StdoutArgT,
+                    TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+                ],
+                FileAndStringTypeToPipe[
+                    StderrArgT,
+                    TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
+                ],
             ],
-            FileAndStringTypeToPipe[
-                StdoutArgT,
-                TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
-            ],
-            FileAndStringTypeToPipe[
-                StderrArgT,
-                TextOptionsToStringType[UniveralNewlinesT, TextT, EncodingT, ErrorsT],
-            ],
-        ],
-        args: _CMD,
-        bufsize: int = -1,
-        executable: StrOrBytesPath | None = None,
-        stdin: StdinArgT = None,
-        stdout: StdoutArgT = None,
-        stderr: StderrArgT = None,
-        preexec_fn: Callable[[], Any] | None = None,
-        close_fds: bool = True,
-        shell: bool = False,
-        cwd: StrOrBytesPath | None = None,
-        env: _ENV | None = None,
-        universal_newlines: UniveralNewlinesT = None,
-        startupinfo: Any | None = None,
-        creationflags: int = 0,
-        restore_signals: bool = True,
-        start_new_session: bool = False,
-        pass_fds: Collection[int] = (),
-        *,
-        text: TextT = None,
-        encoding: EncodingT = None,
-        errors: ErrorsT = None,
-        user: str | int | None = None,
-        group: str | int | None = None,
-        extra_groups: Iterable[str | int] | None = None,
-        umask: int = -1,
-        pipesize: int = -1,
-        process_group: int | None = None,
-    ) -> None: ...
+            args: _CMD,
+            bufsize: int = -1,
+            executable: StrOrBytesPath | None = None,
+            stdin: StdinArgT = None,
+            stdout: StdoutArgT = None,
+            stderr: StderrArgT = None,
+            preexec_fn: Callable[[], Any] | None = None,
+            close_fds: bool = True,
+            shell: bool = False,
+            cwd: StrOrBytesPath | None = None,
+            env: _ENV | None = None,
+            universal_newlines: UniveralNewlinesT = None,
+            startupinfo: Any | None = None,
+            creationflags: int = 0,
+            restore_signals: bool = True,
+            start_new_session: bool = False,
+            pass_fds: Collection[int] = (),
+            *,
+            text: TextT = None,
+            encoding: EncodingT = None,
+            errors: ErrorsT = None,
+            user: str | int | None = None,
+            group: str | int | None = None,
+            extra_groups: Iterable[str | int] | None = None,
+            umask: int = -1,
+            pipesize: int = -1,
+            process_group: int | None = None,
+        ) -> None: ...
 
 
 Recursive Overloads
